@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters: 
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: id_rsa_aws
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+Resources: 
+    rEC2BaseRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                        Service:
+                            - ec2.amazonaws.com
+                      Action:
+                        - sts:AssumeRole
+            Path: "/"
+
+    rEC2BasePolicy:
+        Type: "AWS::IAM::Policy"
+        Properties:
+            PolicyName: root
+            PolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Action:
+                        - ec2:DescribeTags
+                        - ec2:DescribeVolumes
+                        - ec2:DescribeInstances
+                      Resource: "*"
+                    - Effect: Allow
+                      Action:
+                        - s3:ListBucket
+                        - s3:GetObject
+                        - s3:GetBucketLocation
+                        - s3:ListAllMyBuckets
+                      Resource:
+                        - "arn:aws:s3:::*"
+                        - "arn:aws:s3:::*/*"
+            Roles:
+                - Ref: rEC2BaseRole
+
+    rEC2BaseProfile:
+        Type: "AWS::IAM::InstanceProfile"
+        Properties:
+            Path: "/"
+            Roles:
+                - Ref: rEC2BaseRole
+            InstanceProfileName: "EC2BaseProfile"
+
+    WebServerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: "Enable HTTP access via port 80 + SSH access"
+            SecurityGroupIngress:
+                - CidrIp: 0.0.0.0/0
+                  FromPort: 80
+                  IpProtocol: tcp
+                  ToPort: 80
+                - CidrIp: !Ref SSHLocation
+                  FromPort: 22
+                  IpProtocol: tcp
+                  ToPort: 22
+
+
+    rTestInst:
+        Type: "AWS::EC2::Instance"
+        Metadata:
+            AWS::CloudFormation::Authentication:
+                  S3AccessCreds:
+                    type: "S3"
+                    roleName:
+                      Ref: rEC2BaseRole
+
+        Properties:
+            AvailabilityZone:
+                Fn::Sub: "${AWS::Region}a"
+            InstanceType: "t2.micro"
+            ImageId: !Ref ImageId
+            IamInstanceProfile: !Ref rEC2BaseProfile
+            InstanceInitiatedShutdownBehavior: "stop"
+            KeyName: !Ref KeyPairName
+            SecurityGroups:
+              - !Ref WebServerSecurityGroup              
+            Tags:
+                - Key: "Name"
+                  Value: "testInstance"
+                - Key: "Account"
+                  Value:
+                    Ref: AWS::AccountId
+            UserData:
+              Fn::Base64:
+                    Fn::Sub: |
+                        #!/bin/bash
+                        #pull in key file
+                        aws s3 cp s3://sourcecode-nh/TweetProducer.py TweetProducer.py

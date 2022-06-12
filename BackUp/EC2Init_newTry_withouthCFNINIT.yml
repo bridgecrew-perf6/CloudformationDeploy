@@ -1,0 +1,155 @@
+#https://docs.aws.amazon.com/de_de/AWSCloudFormation/latest/UserGuide/aws-resource-init.html
+#https://github.com/tonynv/cfn-authenticated-s3-example/blob/5376197e4d846355e3a8f46bfa5b482b36ca4d29/templates/authenticated-s3.template.yaml#L86-L104
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'S3 Authenticated bootstrapping Example (qs-tb2p0t02)'
+Metadata:
+  LICENSE: 'Apache License, Version 2.0' 
+  AUTHOR: 'Tony Vattathil'
+  EMAIL: 'tonynv@amazon.com'
+Parameters:
+
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+      
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: id_rsa_aws
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+  #SubnetId:
+  #  Description: The Public subnet where the ec2 instance will be launched
+  #  Type: AWS::EC2::Subnet::Id
+  #VPCID:
+  #  Description: The VPC to launch the GitHub Enterprise server
+  #  Type: AWS::EC2::VPC::Id
+  BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: 'replace-with-your-staging-bucket'
+    Description: >-
+      S3 bucket name for the Quick Start assets. Quick Start bucket name can
+      include numbers, lowercase letters, uppercase letters, and hyphens (-). It
+      cannot start or end with a hyphen (-).
+    Type: String
+  
+Mappings:
+  AWSAMIRegionMap:
+    ap-northeast-1:
+      US1604HVM: ami-0f9af249e7fa6f61b
+    ap-northeast-2:
+      US1604HVM: ami-082bdb3b2d54d5a19
+    ap-south-1:
+      US1604HVM: ami-0927ed83617754711
+    ap-southeast-1:
+      US1604HVM: ami-0ee0b284267ea6cde
+    ap-southeast-2:
+      US1604HVM: ami-0328aad0f6218c429
+    ca-central-1:
+      US1604HVM: ami-06a6f79d24f2b6a21
+    eu-central-1:
+      US1604HVM: ami-050a22b7e0cf85dd0
+    eu-north-1:
+      US1604HVM: ami-7dd85203
+    eu-west-1:
+      US1604HVM: ami-03ef731cc103c9f09
+    eu-west-2:
+      US1604HVM: ami-0fab23d0250b9a47e
+    eu-west-3:
+      US1604HVM: ami-0bb607148d8cf36fb
+    sa-east-1:
+      US1604HVM: ami-02b235ae9b5819d3b
+    us-east-1:
+      US1604HVM: ami-04763b3055de4860b
+    us-east-2:
+      US1604HVM: ami-0d03add87774b12c5
+    us-west-1:
+      US1604HVM: ami-0dbf5ea29a7fc7e05
+    ap-northeast-3:
+      US1604HVM: ami-0154a1d609dece568
+    us-west-2:
+      US1604HVM: ami-0994c095691a46fb5
+Conditions:
+  GovCloudCondition: !Equals
+    - !Ref AWS::Region
+    - us-gov-west-1
+Resources:
+  RootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Principal:
+              Service: ec2.amazonaws.com
+            Effect: Allow
+            Sid: ''
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 's3:*'
+                Resource: '*'
+          PolicyName: AuthenticatedS3GetObjects
+  RootInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref RootRole
+  InstanceSecurityGroup:
+    Properties:
+      GroupDescription: 'ssh access to instance'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+        #- CidrIp: !Ref AccessCIDR
+        #  FromPort: 22
+        #  IpProtocol: tcp
+        #  ToPort: 22
+      #VpcId: !Ref VPCID
+    Type: 'AWS::EC2::SecurityGroup'
+  ExampleInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      IamInstanceProfile: !Ref RootInstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+
+            
+    Metadata:
+      AWS::CloudFormation::Authentication: 
+        S3AccessCreds: 
+          type: S3
+          buckets: 
+            - !Sub ${BucketName}
+          roleName: 
+            Ref: RootRole
+
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M

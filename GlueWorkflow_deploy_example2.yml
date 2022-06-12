@@ -1,0 +1,56 @@
+---
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-glue-trigger.html
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "AWS Glue trigger test"
+Resources:
+  MyJobTriggerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+  MyJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "MyJobTriggerJob"
+      LogUri: "wikiData"
+      Role: !Ref MyJobTriggerRole
+      Command:
+        Name: "glueetl"
+        ScriptLocation: "s3://testdata-bucket/s3-target/create-delete-job-xtf-ETL-s3-json-to-csv.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-enable"
+      MaxRetries: 0
+  MyJobTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: "MyJobTrigger"
+      Type: "CONDITIONAL"
+      Description: "Description for a conditional job trigger"											
+      Actions:
+        - JobName: !Ref MyJob
+          Arguments:
+            "--job-bookmark-option": "job-bookmark-enable"
+      Predicate:
+        Conditions:
+          - LogicalOperator: EQUALS
+            JobName: !Ref MyJob
+            State: SUCCEEDED

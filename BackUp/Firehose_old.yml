@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Resources:
+  Firehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: tester-partitioning-delimiter
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: arn:aws:s3:::tweets-ingested
+        BufferingHints:
+          SizeInMBs: 2
+          IntervalInSeconds: 120
+        CompressionFormat: UNCOMPRESSED
+        ErrorOutputPrefix: table/error/!{firehose:error-output-type}/dt=!{timestamp:yyyy'-'MM'-'dd}/h=!{timestamp:HH}/
+        Prefix: kinesis_stream/ #YYYY=!{partitionKeyFromQuery:YYYY}/MM=!{partitionKeyFromQuery:MM}//DD=!{partitionKeyFromQuery:DD}/HH=!{partitionKeyFromQuery:HH} #/REGION=!{partitionKeyFromQuery:REGION}/SITEID=!{partitionKeyFromQuery:SITEID}/
+        RoleARN: arn:aws:iam::290544014146:role/service-role/kinesis-analytics-tweet_stream_app-us-east-1
+        #DynamicPartitioningConfiguration:
+        #  Enabled: true
+        #  RetryOptions:
+        #    DurationInSeconds: 300
+        #ProcessingConfiguration:
+        #  Enabled: true
+        #  Processors:
+        #  - Type: MetadataExtraction
+        #    Parameters:
+        #    - ParameterName: MetadataExtractionQuery
+        #      ParameterValue: '{YYYY : (.ts/1000) | strftime("%Y"), MM : (.ts/1000)
+        #        | strftime("%m"), DD : (.ts/1000) | strftime("%d"), HH: (.ts/1000)
+        #        | strftime("%H")}'
+        #    - ParameterName: JsonParsingEngine
+        #      ParameterValue: JQ-1.6
+        #  - Type: AppendDelimiterToRecord
+        #    Parameters:
+        #    - ParameterName: Delimiter
+        #      ParameterValue: "\\n"

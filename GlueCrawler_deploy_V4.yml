@@ -1,0 +1,104 @@
+
+---
+AWSTemplateFormatVersion: '2010-09-09'
+# Sample CFN YAML to demonstrate creating a crawler
+#
+# Parameters section contains names that are substituted in the Resources section
+# These parameters are the names the resources created in the Data Catalog
+Parameters:                                                                                                       
+# The name of the crawler to be created
+  CFNCrawlerName:  
+    Type: String
+    Default: tweets-ingested-crawler
+  CFNDatabaseName:
+    Type: String
+    Default: tweets-ingested-db
+  CFNTablePrefixName:
+    Type: String
+    Default: rawTweets
+
+  Environment:
+    Type: String
+    Default: poc
+    AllowedValues:
+      - "poc"
+      - "dev"
+      - "tst"
+      - "prod"
+  
+  Name:
+    Type: String
+    Default: TweetsAnalyzer
+
+  SourceBucket:
+    Type: String
+  
+  MetaDataBucket:
+    Type: String
+  
+  ProcessedDataBucket:
+    Type: String
+#
+#
+# Resources section defines metadata for the Data Catalog
+Resources:
+#Create IAM Role assumed by the crawler. For demonstration, this role is given all permissions.
+  CFNRoleIngestedTweets:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/PowerUserAccess
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+ # Create a database to contain tables created by the crawler
+  CFNDatabaseIngestedTweets:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref CFNDatabaseName
+        Description: "Glue Databases for ingested tweets"
+ #Create a crawler to crawl the tweets data on a public S3 bucket
+  CFNCrawlerIngestedTweets:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref CFNCrawlerName
+      Role: !GetAtt CFNRoleIngestedTweets.Arn
+      # Just Crawl New Order to limit workload and costs
+      RecrawlPolicy: 
+        RecrawlBehavior: "CRAWL_NEW_FOLDERS_ONLY"
+      #Classifiers: none, use the default classifier
+      Description: AWS Glue crawler to crawl ingested tweets
+      #Schedule: none, use default run-on-demand
+      DatabaseName: !Ref CFNDatabaseName
+      Targets:
+        S3Targets:
+          # Private S3 bucket with ingested tweet data
+          - Path: "s3://ingested-tweets-nh/dev/"
+      TablePrefix: !Ref CFNTablePrefixName
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG" # Updated to LOG since RecrawPolicy required it --> "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
